@@ -30,16 +30,18 @@ export const setupMcpServer = (app: express.Application) => {
     // Define the tool with access to sessionId
     const toolSchema = {
       url: z.string().url().describe("The URL of the Google Spreadsheet to fetch data from."),
+      sheetName: z.string().optional().describe("The name of the sheet to fetch data from. If omitted, the first sheet will be used."),
     };
 
     // @ts-ignore
     server.tool(
       "get_data",
+      "Fetch data from a Google Spreadsheet URL",
       toolSchema,
-      async (args: { url: string }) => {
-        const { url } = args;
+      async (args: { url: string; sheetName?: string }) => {
+        const { url, sheetName } = args;
         try {
-          const data = await getSheetData(url, sessionId);
+          const data = await getSheetData(url, sessionId, sheetName);
           return {
             content: [{ type: "text" as const, text: data }]
           };
@@ -61,8 +63,11 @@ export const setupMcpServer = (app: express.Application) => {
 
     // Clean up on close
     res.on('close', () => {
-      transports.delete(sessionId);
-      // console.log(`Session ${sessionId} closed`);
+      const currentTransport = transports.get(sessionId);
+      if (currentTransport === transport) {
+        transports.delete(sessionId);
+        // console.log(`Session ${sessionId} closed`);
+      }
     });
 
     await server.connect(transport);
