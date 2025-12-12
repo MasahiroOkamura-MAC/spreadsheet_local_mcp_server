@@ -1,96 +1,47 @@
 // @ts-nocheck
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import express, { Request, Response } from 'express';
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from 'zod';
 import { getSheetData } from './sheets';
 
-// Store active transports to route POST messages
-// Map<sessionId, transport>
-const transports = new Map<string, SSEServerTransport>();
+export const setupMcpServer = async () => {
 
-export const setupMcpServer = (app: express.Application) => {
-
-  // SSE Endpoint
-  app.get('/sse', async (req: Request, res: Response) => {
-    const sessionId = req.query.session_id as string;
-
-    if (!sessionId) {
-      res.status(401).send("Missing session_id");
-      return;
-    }
-
-    // Create a new MCP server instance for this session
-    // This allows us to close over the sessionId for the tools
-    const server = new McpServer({
-      name: "Google Sheets Remote MCP",
-      version: "1.0.0"
-    });
-
-    // Define the tool with access to sessionId
-    const toolSchema = {
-      url: z.string().url().describe("The URL of the Google Spreadsheet to fetch data from."),
-      sheetName: z.string().optional().describe("The name of the sheet to fetch data from. If omitted, the first sheet will be used."),
-    };
-
-    // @ts-ignore
-    server.tool(
-      "get_data",
-      "Fetch data from a Google Spreadsheet URL",
-      toolSchema,
-      async (args: { url: string; sheetName?: string }) => {
-        const { url, sheetName } = args;
-        try {
-          const data = await getSheetData(url, sessionId, sheetName);
-          return {
-            content: [{ type: "text" as const, text: data }]
-          };
-        } catch (error: any) {
-          return {
-            content: [{ type: "text" as const, text: `Error fetching data: ${error.message}` }],
-            isError: true
-          };
-        }
-      }
-    );
-
-    // Create transport
-    // The client will post messages to /messages?session_id=...
-    const transport = new SSEServerTransport(`/messages?session_id=${sessionId}`, res);
-
-    // Store transport for the POST handler
-    transports.set(sessionId, transport);
-
-    // Clean up on close
-    res.on('close', () => {
-      const currentTransport = transports.get(sessionId);
-      if (currentTransport === transport) {
-        transports.delete(sessionId);
-        // console.log(`Session ${sessionId} closed`);
-      }
-    });
-
-    await server.connect(transport);
+  // Create a new MCP server instance
+  const server = new McpServer({
+    name: "Google Sheets Local MCP",
+    version: "1.0.0"
   });
 
-  // Message Endpoint
-  app.post('/messages', async (req: Request, res: Response) => {
-    const sessionId = req.query.session_id as string;
-    console.log(`[POST /messages] Received message for session: ${sessionId}`);
+  // Define the tool
+  const toolSchema = {
+    url: z.string().url().describe("The URL of the Google Spreadsheet to fetch data from."),
+    sheetName: z.string().optional().describe("The name of the sheet to fetch data from. If omitted, the first sheet will be used."),
+  };
 
-    if (!sessionId) {
-      res.status(400).send("Missing session_id");
-      return;
+  // @ts-ignore
+  server.tool(
+    "get_data",
+    "Fetch data from a Google Spreadsheet URL",
+    toolSchema,
+    async (args: { url: string; sheetName?: string }) => {
+      const { url, sheetName } = args;
+      try {
+        const data = await getSheetData(url, sheetName);
+        return {
+          content: [{ type: "text" as const, text: data }]
+        };
+      } catch (error: any) {
+        return {
+          content: [{ type: "text" as const, text: `Error fetching data: ${error.message}` }],
+          isError: true
+        };
+      }
     }
+  );
 
-    const transport = transports.get(sessionId);
-    if (!transport) {
-      console.log(`[POST /messages] Session not found or inactive: ${sessionId}`);
-      res.status(404).send("Session not found or inactive");
-      return;
-    }
+  // Connect to stdio
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 
-    console.log(`[POST /messages] Handling message for session: ${sessionId}`);
-    await transport.handlePostMessage(req, res);
-  });
+  // console.error("Local MCP Server running on stdio");
 };

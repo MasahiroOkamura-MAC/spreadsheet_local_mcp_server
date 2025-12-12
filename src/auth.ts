@@ -294,8 +294,8 @@ export const setupAuthRoutes = (app: express.Application) => {
         try {
             const { tokens } = await oauth2Client.getToken(code);
 
-            // Generate a session ID
-            const sessionId = uuidv4();
+            // Use fixed session ID for Local MCP
+            const sessionId = "local-user";
 
             // Store tokens AND credentials
             const allTokens = loadTokens();
@@ -307,7 +307,7 @@ export const setupAuthRoutes = (app: express.Application) => {
             };
             saveTokens(allTokens);
 
-            res.redirect(`/auth/connected?session_id=${sessionId}`);
+            res.redirect(`/auth/connected`);
 
         } catch (error) {
             console.error('Error retrieving access token', error);
@@ -316,22 +316,12 @@ export const setupAuthRoutes = (app: express.Application) => {
     });
 
     router.get('/connected', (req, res) => {
-        const sessionId = req.query.session_id as string;
-
-        if (!sessionId) {
-            res.status(400).send("Missing session_id");
-            return;
-        }
-
+        // No session ID check needed for local single-user mode
         const allTokens = loadTokens();
-        if (!allTokens[sessionId]) {
+        if (!allTokens["local-user"]) {
             res.status(404).send("Session not found. Please log in again.");
             return;
         }
-
-        const host = req.get('host');
-        const protocol = req.protocol;
-        const connectionUrl = `${protocol}://${host}/sse?session_id=${sessionId}`;
 
         res.send(`
 <!DOCTYPE html>
@@ -412,59 +402,6 @@ export const setupAuthRoutes = (app: express.Application) => {
             margin-bottom: 32px;
         }
 
-        .url-box {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 24px;
-            position: relative;
-            overflow: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .url-box:hover {
-            border-color: rgba(0, 240, 255, 0.3);
-            box-shadow: 0 0 20px var(--accent-glow);
-        }
-
-        .url-label {
-            display: block;
-            text-align: left;
-            font-size: 12px;
-            color: var(--accent-color);
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-weight: 600;
-        }
-
-        pre {
-            margin: 0;
-            font-family: var(--font-mono);
-            font-size: 14px;
-            color: #e2e8f0;
-            white-space: pre-wrap;
-            word-break: break-all;
-            text-align: left;
-        }
-
-        .copy-hint {
-            font-size: 13px;
-            color: var(--text-secondary);
-            opacity: 0.8;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-
-        .copy-hint svg {
-            width: 16px;
-            height: 16px;
-            fill: currentColor;
-        }
-
         @keyframes slideUp {
             from {
                 opacity: 0;
@@ -475,46 +412,13 @@ export const setupAuthRoutes = (app: express.Application) => {
                 transform: translateY(0);
             }
         }
-
-        /* Background decoration */
-        .orb {
-            position: absolute;
-            width: 300px;
-            height: 300px;
-            border-radius: 50%;
-            background: var(--accent-color);
-            filter: blur(100px);
-            opacity: 0.1;
-            z-index: -1;
-            animation: float 10s infinite ease-in-out;
-        }
-        .orb-1 { top: -100px; left: -100px; }
-        .orb-2 { bottom: -100px; right: -100px; animation-delay: -5s; }
-
-        @keyframes float {
-            0%, 100% { transform: translate(0, 0); }
-            50% { transform: translate(30px, 50px); }
-        }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="orb orb-1"></div>
-    <div class="orb orb-2"></div>
-    
     <div class="container">
-        <h1>System Connected</h1>
-        <p>Authentication protocol established successfully.<br>Secure channel ready for initialization.</p>
-        
-        <div class="url-box">
-            <span class="url-label">Connection Endpoint</span>
-            <pre>${connectionUrl}</pre>
-        </div>
-
-        <div class="copy-hint">
-            <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-            Copy this URL to your MCP client configuration
-        </div>
+        <h1>Authentication Successful</h1>
+        <p>You can now close this window and use the Local MCP server.</p>
     </div>
 </body>
 </html>
@@ -524,7 +428,7 @@ export const setupAuthRoutes = (app: express.Application) => {
     app.use('/auth', router);
 };
 
-export const getAuthClient = (sessionId: string) => {
+export const getAuthClient = (sessionId: string = "local-user") => {
     const allTokens = loadTokens();
     const sessionData = allTokens[sessionId];
 

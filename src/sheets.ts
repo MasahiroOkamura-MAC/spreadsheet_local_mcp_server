@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import { getAuthClient } from './auth';
 
-export const getSheetData = async (url: string, sessionId: string, sheetName?: string): Promise<string> => {
+export const getSheetData = async (url: string, sheetName?: string): Promise<string> => {
   // 1. Parse URL to get Spreadsheet ID
   // Format: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit...
   const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
@@ -11,7 +11,7 @@ export const getSheetData = async (url: string, sessionId: string, sheetName?: s
   const spreadsheetId = match[1];
 
   // 2. Get Auth Client
-  const auth = getAuthClient(sessionId);
+  const auth = getAuthClient();
 
   // 3. Fetch Data
   const sheets = google.sheets({ version: 'v4', auth });

@@ -1,28 +1,43 @@
+import { setupMcpServer } from './mcp';
+import { getAuthClient, setupAuthRoutes } from './auth';
 import express from 'express';
 import cors from 'cors';
+import open from 'open';
 import dotenv from 'dotenv';
-import { setupMcpServer } from './mcp';
-import { setupAuthRoutes } from './auth';
 
 dotenv.config();
 
-const app = express();
-const PORT = process.env.PORT || 8080;
+const startAuthServer = async () => {
+  const app = express();
+  const PORT = process.env.PORT || 8080;
 
-app.use(cors());
-// app.use(express.json()); // Conflict with MCP SDK stream reading
+  app.use(cors());
+  setupAuthRoutes(app);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.status(200).send('OK');
-});
+  return new Promise<void>((resolve) => {
+    app.listen(PORT, async () => {
+      const url = `http://localhost:${PORT}/auth/login`;
+      console.error(`Auth Server is running on port ${PORT}`);
+      console.error(`Opening browser: ${url}`);
+      await open(url);
+      resolve();
+    });
+  });
+};
 
-// Setup Auth Routes
-setupAuthRoutes(app);
+const main = async () => {
+  try {
+    // Check if we have valid credentials
+    getAuthClient();
+  } catch (error) {
+    // If auth fails, start the auth server
+    console.error("Authentication required. Starting auth server...");
+    // We don't await this because we want to start the MCP server concurrently
+    startAuthServer().catch(err => console.error("Failed to start auth server:", err));
+  }
 
-// Setup MCP Server (SSE)
-setupMcpServer(app);
+  // Always start MCP Server (Stdio)
+  setupMcpServer().catch(console.error);
+};
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+main();
