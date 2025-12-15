@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import { getAuthClient } from './auth';
 
-export const getSheetData = async (url: string, sessionId: string): Promise<string> => {
+export const getSheetData = async (url: string, sheetName?: string): Promise<string> => {
   // 1. Parse URL to get Spreadsheet ID
   // Format: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit...
   const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
@@ -11,28 +11,30 @@ export const getSheetData = async (url: string, sessionId: string): Promise<stri
   const spreadsheetId = match[1];
 
   // 2. Get Auth Client
-  const auth = getAuthClient(sessionId);
+  const auth = getAuthClient();
 
   // 3. Fetch Data
   const sheets = google.sheets({ version: 'v4', auth });
 
   try {
-    // First, get the spreadsheet metadata to find the first sheet name if not specified?
-    // Or just fetch 'Sheet1'!A1:Z1000?
-    // Let's try to fetch the first sheet's data.
+    let range = sheetName;
 
-    const spreadsheet = await sheets.spreadsheets.get({
-      spreadsheetId
-    });
+    // If no sheet name is provided, fetch metadata to find the first sheet's title
+    if (!range) {
+      const spreadsheet = await sheets.spreadsheets.get({
+        spreadsheetId
+      });
 
-    const firstSheetTitle = spreadsheet.data.sheets?.[0]?.properties?.title;
-    if (!firstSheetTitle) {
-      throw new Error("No sheets found in the spreadsheet.");
+      const firstSheetTitle = spreadsheet.data.sheets?.[0]?.properties?.title;
+      if (!firstSheetTitle) {
+        throw new Error("No sheets found in the spreadsheet.");
+      }
+      range = firstSheetTitle;
     }
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: firstSheetTitle, // Fetch the whole sheet
+      range: range!, // Fetch the whole sheet
     });
 
     const rows = response.data.values;
