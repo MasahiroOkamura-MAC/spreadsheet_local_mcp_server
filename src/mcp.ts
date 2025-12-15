@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from 'zod';
 import { getSheetData } from './sheets';
+import { getDriveFile } from './drive';
 
 export const setupMcpServer = async () => {
 
@@ -26,7 +27,25 @@ export const setupMcpServer = async () => {
     async (args: { url: string; sheetName?: string }) => {
       const { url, sheetName } = args;
       try {
-        const data = await getSheetData(url, sheetName);
+        let data;
+        if (url.includes('/file/d/')) {
+          // It's explicitly a Drive file URL
+          data = await getDriveFile(url, sheetName);
+        } else {
+          // Try as a Google Sheet first
+          try {
+            data = await getSheetData(url, sheetName);
+          } catch (error: any) {
+            // Check for the specific error indicating it's an Excel file in Office Editing mode
+            if (error.message && error.message.includes("This operation is not supported for this document")) {
+              console.error("Detected Excel file in Office Editing mode. Falling back to Drive API.");
+              data = await getDriveFile(url, sheetName);
+            } else {
+              throw error; // Re-throw other errors
+            }
+          }
+        }
+
         return {
           content: [{ type: "text" as const, text: data }]
         };

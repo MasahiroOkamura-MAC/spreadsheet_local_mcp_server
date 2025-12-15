@@ -5,7 +5,18 @@ import fs from 'fs';
 import path from 'path';
 
 // TODO: Replace with Firestore
-const TOKEN_FILE = path.join(process.cwd(), '.tokens.json');
+const TOKEN_FILE = path.join(__dirname, '../.tokens.json');
+
+const logFile = path.join(__dirname, '../debug.log');
+const log = (msg: string) => {
+    try {
+        fs.appendFileSync(logFile, `${new Date().toISOString()} [AUTH] ${msg}\n`);
+    } catch (e) {
+        // ignore
+    }
+};
+
+log(`Auth module loaded. TOKEN_FILE: ${TOKEN_FILE}`);
 
 // In-memory store for pending auth requests
 // Map<state, { clientId, clientSecret }>
@@ -13,12 +24,17 @@ const pendingAuthRequests = new Map<string, { clientId: string; clientSecret: st
 
 // Helper to load tokens
 const loadTokens = (): Record<string, any> => {
+    log(`Loading tokens from: ${TOKEN_FILE}`);
     if (!fs.existsSync(TOKEN_FILE)) {
+        log('Token file does not exist.');
         return {};
     }
     try {
-        return JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
+        const data = fs.readFileSync(TOKEN_FILE, 'utf-8');
+        log(`Token file found. Size: ${data.length}`);
+        return JSON.parse(data);
     } catch (e) {
+        log(`Failed to load tokens: ${e}`);
         console.error("Failed to load tokens", e);
         return {};
     }
@@ -26,6 +42,7 @@ const loadTokens = (): Record<string, any> => {
 
 // Helper to save tokens
 const saveTokens = (tokens: Record<string, any>) => {
+    log(`Saving tokens to: ${TOKEN_FILE}`);
     fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokens, null, 2));
 };
 
@@ -245,6 +262,7 @@ export const setupAuthRoutes = (app: express.Application) => {
 
         const scopes = [
             'https://www.googleapis.com/auth/spreadsheets.readonly',
+            'https://www.googleapis.com/auth/drive.readonly',
             'https://www.googleapis.com/auth/userinfo.profile',
             'https://www.googleapis.com/auth/userinfo.email'
         ];
