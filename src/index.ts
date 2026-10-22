@@ -1,7 +1,6 @@
 import { setupMcpServer } from './mcp';
 import { getAuthClient, setupAuthRoutes } from './auth';
 import express from 'express';
-import cors from 'cors';
 import open from 'open';
 import dotenv from 'dotenv';
 
@@ -15,13 +14,12 @@ const log = (msg: string) => fs.appendFileSync(logFile, `${new Date().toISOStrin
 
 const startAuthServer = async () => {
   const app = express();
-  const PORT = process.env.PORT || 8080;
+  const PORT = Number(process.env.PORT || 8080);
 
-  app.use(cors());
   setupAuthRoutes(app);
 
   return new Promise<void>((resolve, reject) => {
-    const server = app.listen(PORT, async () => {
+    const server = app.listen(PORT, '127.0.0.1', async () => {
       const url = `http://localhost:${PORT}/auth/login`;
       log(`Auth Server is running on port ${PORT}`);
       log(`Opening browser: ${url}`);
@@ -31,12 +29,12 @@ const startAuthServer = async () => {
         await open(url);
         log('Browser opened successfully');
       } catch (e: any) {
-        log(`Failed to open browser: ${e.message}`);
+        log('Server operation failed');
       }
       resolve();
     });
     server.on('error', (e) => {
-      log(`Server error: ${e.message}`);
+      log('Server operation failed');
       reject(e);
     });
   });
@@ -54,15 +52,15 @@ const main = async () => {
     console.error("Authentication required. Starting auth server...");
     // We don't await this because we want to start the MCP server concurrently
     startAuthServer().catch(err => {
-      log(`Failed to start auth server: ${err.message}`);
-      console.error("Failed to start auth server:", err);
+      log('Server operation failed');
+      console.error("Failed to start auth server");
     });
   }
 
   // Always start MCP Server (Stdio)
   setupMcpServer().catch(err => {
-    log(`MCP Server error: ${err.message}`);
-    console.error(err);
+    log('Server operation failed');
+    console.error("MCP server failed");
   });
 };
 
