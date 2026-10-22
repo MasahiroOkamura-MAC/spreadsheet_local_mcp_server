@@ -1,14 +1,12 @@
 import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import { setupAuthRoutes } from './auth';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = Number(process.env.PORT || 8080);
 
-app.use(cors());
 
 // Health check
 app.get('/health', (req, res) => {
@@ -18,7 +16,7 @@ app.get('/health', (req, res) => {
 // Setup Auth Routes
 setupAuthRoutes(app);
 
-app.listen(PORT, () => {
+app.listen(PORT, '127.0.0.1', () => {
   console.log(`Auth Server is running on port ${PORT}`);
   console.log(`Please visit http://localhost:${PORT}/auth/login to authenticate.`);
 });

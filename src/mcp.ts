@@ -27,6 +27,8 @@ export const setupMcpServer = async () => {
     async (args: { url: string; sheetName?: string }) => {
       const { url, sheetName } = args;
       try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' || !['docs.google.com', 'drive.google.com'].includes(parsed.hostname) || parsed.username || parsed.password) throw new Error('Invalid document URL');
         let data;
         if (url.includes('/file/d/')) {
           // It's explicitly a Drive file URL
@@ -51,7 +53,7 @@ export const setupMcpServer = async () => {
         };
       } catch (error: any) {
         return {
-          content: [{ type: "text" as const, text: `Error fetching data: ${error.message}` }],
+          content: [{ type: "text" as const, text: "Unable to fetch the requested document" }],
           isError: true
         };
       }

@@ -21,7 +21,7 @@ export const getDriveFile = async (url: string, sheetName?: string): Promise<str
     const response = await drive.files.get({
       fileId: fileId,
       alt: 'media',
-    }, { responseType: 'arraybuffer' });
+    }, { responseType: 'arraybuffer', maxContentLength: 10 * 1024 * 1024 });
 
     const buffer = Buffer.from(response.data as ArrayBuffer);
 
@@ -53,7 +53,7 @@ export const getDriveFile = async (url: string, sheetName?: string): Promise<str
     return csvData;
 
   } catch (error: any) {
-    console.error('Error fetching Drive file:', error);
-    throw new Error(`Failed to fetch Drive file: ${error.message}`);
+    console.error('Google Drive request failed');
+    throw new Error('Failed to fetch Drive file');
   }
 };

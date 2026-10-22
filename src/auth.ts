@@ -1,61 +1,28 @@
+import { authOrigin, localRequestGuard, browserBinding, newBinding, equalBinding, tokenStore } from './security';
 import express, { Router } from 'express';
 import { google } from 'googleapis';
-import { v4 as uuidv4 } from 'uuid';
-import fs from 'fs';
 import path from 'path';
 
-// TODO: Replace with Firestore
-const TOKEN_FILE = path.join(__dirname, '../.tokens.json');
-
-const logFile = path.join(__dirname, '../debug.log');
-const log = (msg: string) => {
-    try {
-        fs.appendFileSync(logFile, `${new Date().toISOString()} [AUTH] ${msg}\n`);
-    } catch (e) {
-        // ignore
-    }
-};
-
-log(`Auth module loaded. TOKEN_FILE: ${TOKEN_FILE}`);
-
-// In-memory store for pending auth requests
-// Map<state, { clientId, clientSecret }>
-const pendingAuthRequests = new Map<string, { clientId: string; clientSecret: string }>();
-
-// Helper to load tokens
-const loadTokens = (): Record<string, any> => {
-    log(`Loading tokens from: ${TOKEN_FILE}`);
-    if (!fs.existsSync(TOKEN_FILE)) {
-        log('Token file does not exist.');
-        return {};
-    }
-    try {
-        const data = fs.readFileSync(TOKEN_FILE, 'utf-8');
-        log(`Token file found. Size: ${data.length}`);
-        return JSON.parse(data);
-    } catch (e) {
-        log(`Failed to load tokens: ${e}`);
-        console.error("Failed to load tokens", e);
-        return {};
-    }
-};
-
-// Helper to save tokens
-const saveTokens = (tokens: Record<string, any>) => {
-    log(`Saving tokens to: ${TOKEN_FILE}`);
-    fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokens, null, 2));
+const store = tokenStore(path.join(__dirname, '..'));
+const loadTokens = store.load;
+const saveTokens = store.save;
+const pendingAuthRequests = new Map<string, {clientId: string; clientSecret: string; binding: string; expiresAt: number}>();
+const cleanupPending = () => {
+    for (const [state, value] of pendingAuthRequests) if (value.expiresAt <= Date.now()) pendingAuthRequests.delete(state);
 };
 
 export const setupAuthRoutes = (app: express.Application) => {
     const router = Router();
 
     // Middleware to parse form data for the login page
-    router.use(express.urlencoded({ extended: true }));
+    router.use(localRequestGuard);
+    router.use(express.urlencoded({ extended: false, limit: '8kb' }));
 
     router.get('/login', (req, res) => {
-        const host = req.get('host');
-        const protocol = req.protocol;
-        const redirectUri = `${protocol}://${host}/auth/callback`;
+        cleanupPending();
+        const binding = browserBinding(req.get('cookie')) || newBinding();
+        res.cookie('mcp_auth', binding, {httpOnly: true, sameSite: 'lax', path: '/auth', maxAge: 600000});
+        const redirectUri = `${authOrigin()}/auth/callback`;
 
         res.send(`
 <!DOCTYPE html>
@@ -219,6 +186,7 @@ export const setupAuthRoutes = (app: express.Application) => {
         <p>Enter your Google Cloud credentials to authorize access.</p>
         
         <form action="/auth/start" method="POST">
+            <input type="hidden" name="csrf" value="${binding}">
             <div class="form-group">
                 <label for="clientId">Client ID</label>
                 <input type="text" id="clientId" name="clientId" required placeholder="xxx.apps.googleusercontent.com">
@@ -243,16 +211,18 @@ export const setupAuthRoutes = (app: express.Application) => {
     });
 
     router.post('/start', (req, res) => {
+        cleanupPending();
+        const binding = browserBinding(req.get('cookie'));
+        if (!equalBinding(binding, req.body.csrf)) { res.status(403).send('Invalid form session'); return; }
+        if (pendingAuthRequests.size >= 100) { res.status(429).send('Too many pending requests'); return; }
         const { clientId, clientSecret } = req.body;
 
-        if (!clientId || !clientSecret) {
+        if (typeof clientId !== 'string' || typeof clientSecret !== 'string' || !clientId || !clientSecret) {
             res.status(400).send('Client ID and Client Secret are required');
             return;
         }
 
-        const host = req.get('host');
-        const protocol = req.protocol;
-        const redirectUri = `${protocol}://${host}/auth/callback`;
+        const redirectUri = `${authOrigin()}/auth/callback`;
 
         const oauth2Client = new google.auth.OAuth2(
             clientId,
@@ -268,10 +238,10 @@ export const setupAuthRoutes = (app: express.Application) => {
         ];
 
         // Generate a unique state for this auth request
-        const state = uuidv4();
+        const state = newBinding();
 
         // Store credentials temporarily
-        pendingAuthRequests.set(state, { clientId, clientSecret });
+        pendingAuthRequests.set(state, { clientId, clientSecret, binding: binding!, expiresAt: Date.now() + 600000 });
 
         const url = oauth2Client.generateAuthUrl({
             access_type: 'offline',
@@ -284,6 +254,7 @@ export const setupAuthRoutes = (app: express.Application) => {
     });
 
     router.get('/callback', async (req, res) => {
+        cleanupPending();
         const { code, state } = req.query;
 
         if (!code || typeof code !== 'string') {
@@ -297,11 +268,12 @@ export const setupAuthRoutes = (app: express.Application) => {
         }
 
         const credentials = pendingAuthRequests.get(state)!;
+        if (!equalBinding(credentials.binding, browserBinding(req.get('cookie')))) {
+            res.status(400).send('Invalid or expired state'); return;
+        }
         pendingAuthRequests.delete(state); // Clean up
 
-        const host = req.get('host');
-        const protocol = req.protocol;
-        const redirectUri = `${protocol}://${host}/auth/callback`;
+        const redirectUri = `${authOrigin()}/auth/callback`;
 
         const oauth2Client = new google.auth.OAuth2(
             credentials.clientId,
@@ -328,7 +300,7 @@ export const setupAuthRoutes = (app: express.Application) => {
             res.redirect(`/auth/connected`);
 
         } catch (error) {
-            console.error('Error retrieving access token', error);
+            console.error('OAuth token exchange failed');
             res.status(500).send('Authentication failed');
         }
     });
@@ -431,7 +403,6 @@ export const setupAuthRoutes = (app: express.Application) => {
             }
         }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
@@ -461,7 +432,7 @@ export const getAuthClient = (sessionId: string = "local-user") => {
     const clientSecret = sessionData.clientSecret || process.env.GOOGLE_CLIENT_SECRET;
     const redirectUri = sessionData.redirectUri || process.env.GOOGLE_REDIRECT_URI;
 
-    if (!clientId || !clientSecret) {
+    if (typeof clientId !== 'string' || typeof clientSecret !== 'string' || !clientId || !clientSecret) {
         throw new Error("Missing Client ID or Client Secret for this session");
     }
 

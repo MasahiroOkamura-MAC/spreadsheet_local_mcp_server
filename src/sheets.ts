@@ -46,10 +46,11 @@ export const getSheetData = async (url: string, sheetName?: string): Promise<str
     return rows.map(row => row.join(',')).join('\n');
 
   } catch (error: any) {
-    console.error('Error fetching sheet data:', error);
-    if (error.response) {
-      console.error('Google API Error Response:', JSON.stringify(error.response.data, null, 2));
+    console.error('Google Sheets request failed');
+    // Preserve the supported Office-file fallback without disclosing API responses.
+    if (error.code === 400 && error.message?.includes('This operation is not supported for this document')) {
+      throw new Error('This operation is not supported for this document');
     }
-    throw new Error(`Failed to fetch sheet data: ${error.message}`);
+    throw new Error('Failed to fetch sheet data');
   }
 };
